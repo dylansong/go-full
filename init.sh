@@ -125,6 +125,34 @@ cd "$APP_NAME"
 echo "Initializing git repo..."
 git init >/dev/null
 
+# .gitignore
+cat > .gitignore <<'EOF'
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+tmp/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Go
+api/tmp/
+
+# Logs
+*.log
+EOF
+
 ########################################
 # 根 package.json（pnpm workspace + turbo）
 ########################################
@@ -174,7 +202,7 @@ cat > turbo.json <<'EOF'
 EOF
 
 mkdir -p apps packages/api-client/src
-mkdir -p api/{cmd/server,internal/{config,http,openapi,service,repo},db/{schema,query,generated},spec}
+mkdir -p api/{cmd/server,internal/{config,http,openapi,service,repo},db/{schema,query,generated,migrations},spec}
 
 ########################################
 # 1. 初始化 Go API 模块 + air + sqlc + Dockerfile
@@ -222,6 +250,45 @@ sql:
         emit_prepared_queries: true
         emit_interface: false
         emit_exact_table_names: false
+EOF
+
+# atlas.hcl - 数据库迁移配置
+cat > atlas.hcl <<'EOF'
+# Atlas 配置文件
+# 文档: https://atlasgo.io/atlas-schema/projects
+
+# 定义环境变量
+variable "database_url" {
+  type    = string
+  default = getenv("DATABASE_URL")
+}
+
+# 开发环境 - 使用本地数据库
+env "local" {
+  # 数据源 URL
+  src = "file://db/schema"
+
+  # 目标数据库
+  url = var.database_url
+
+  # 迁移文件目录
+  migration {
+    dir = "file://db/migrations"
+  }
+
+  # 开发数据库（用于计算迁移差异）
+  dev = "docker://postgres/16/dev?search_path=public"
+}
+
+# 生产环境
+env "prod" {
+  src = "file://db/schema"
+  url = var.database_url
+
+  migration {
+    dir = "file://db/migrations"
+  }
+}
 EOF
 
 # 示例 schema
@@ -344,6 +411,15 @@ ENV PORT=8080
 EXPOSE 8080
 
 CMD ["/app/server"]
+EOF
+
+# .env.example
+cat > .env.example <<'EOF'
+# Server
+PORT=8080
+
+# Database
+DATABASE_URL=postgres://postgres:password@localhost:5432/mydb?sslmode=disable
 EOF
 
 # config.go + main.go（引用 GO_MODULE）
@@ -516,9 +592,26 @@ VUE_APP_DIR := apps/web-vue
 MOBILE_DIR := apps/mobile
 API_CLIENT_PKG := packages/api-client
 
+# Helper function to load .env file
+# Usage: $(call load_env)
+define load_env
+	$(eval include $(API_DIR)/.env)
+	$(eval export)
+endef
+
+# Check if .env exists and source it
+ifneq (,$(wildcard $(API_DIR)/.env))
+    include $(API_DIR)/.env
+    export
+endif
+
 .PHONY: help
 help:
 	@echo "Available commands:"
+	@echo ""
+	@echo "  Environment:"
+	@echo "  make setup-env       - 从 .env.example 创建 .env 文件"
+	@echo "  (开发命令会自动读取 api/.env 环境变量)"
 	@echo ""
 	@echo "  Turbo (monorepo):"
 	@echo "  make dev             - 启动所有前端开发服务器 (turbo dev)"
@@ -530,8 +623,14 @@ help:
 	@echo "  make gen-api-ts      - 从 OpenAPI 生成 shared TS 类型"
 	@echo "  make sqlc            - 运行 sqlc generate"
 	@echo ""
+	@echo "  Database (Atlas):"
+	@echo "  make db-diff         - 生成迁移文件（比较 schema 与数据库差异）"
+	@echo "  make db-apply        - 应用待执行的迁移"
+	@echo "  make db-status       - 查看迁移状态"
+	@echo "  make db-hash         - 更新迁移文件哈希（修改迁移文件后执行）"
+	@echo ""
 	@echo "  Development:"
-	@echo "  make dev-api         - 启动 Go API 服务 (air 优先)"
+	@echo "  make dev-api         - 启动 Go API 服务 (air 优先，自动加载 api/.env)"
 	@echo "  make dev-react       - 启动 React 前端 (如果存在)"
 	@echo "  make dev-vue         - 启动 Vue 前端 (如果存在)"
 	@echo ""
@@ -545,6 +644,17 @@ help:
 	@echo "  Docker:"
 	@echo "  make api-build       - 构建 API Docker 镜像"
 	@echo "  make api-run-local   - 本地用 Docker 运行 API"
+
+# Environment setup
+.PHONY: setup-env
+setup-env:
+	@if [ ! -f "$(API_DIR)/.env" ]; then \
+	  cp $(API_DIR)/.env.example $(API_DIR)/.env; \
+	  echo "✅ Created $(API_DIR)/.env from .env.example"; \
+	  echo "📝 Please edit $(API_DIR)/.env with your actual values"; \
+	else \
+	  echo "⚠️  $(API_DIR)/.env already exists, skipping"; \
+	fi
 
 # Turbo commands
 .PHONY: dev
@@ -572,6 +682,28 @@ gen-api: gen-api-go gen-api-ts
 .PHONY: sqlc
 sqlc:
 	cd $(API_DIR) && sqlc generate
+
+# Atlas database migrations
+.PHONY: db-diff
+db-diff:
+	@read -p "Migration name: " name; \
+	cd $(API_DIR) && atlas migrate diff $$name --env local
+
+.PHONY: db-apply
+db-apply:
+	cd $(API_DIR) && atlas migrate apply --env local
+
+.PHONY: db-status
+db-status:
+	cd $(API_DIR) && atlas migrate status --env local
+
+.PHONY: db-hash
+db-hash:
+	cd $(API_DIR) && atlas migrate hash --env local
+
+.PHONY: db-validate
+db-validate:
+	cd $(API_DIR) && atlas migrate validate --env local
 
 # API dev：优先用 air，没有 air 就用 go run
 .PHONY: dev-api
@@ -659,8 +791,18 @@ echo "    go install github.com/cosmtrek/air@latest"
 echo "    go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest"
 echo "    go install github.com/deepmap/oapi-codegen/cmd/oapi-codegen@latest"
 echo
+echo "  Atlas (数据库迁移)："
+echo "    # macOS"
+echo "    brew install ariga/tap/atlas"
+echo "    # 或通用方式"
+echo "    curl -sSf https://atlasgo.sh | sh"
+echo
 echo "  Node 依赖（根目录）："
 echo "    pnpm install"
+echo
+echo "  配置环境变量："
+echo "    make setup-env        # 从 .env.example 创建 .env"
+echo "    编辑 api/.env 设置数据库连接等配置"
 echo
 echo "  生成 OpenAPI 与 TS 类型："
 echo "    make gen-api"
@@ -668,7 +810,12 @@ echo
 echo "  生成 sqlc 代码："
 echo "    make sqlc"
 echo
-echo "  开发时："
+echo "  数据库迁移（Atlas）："
+echo "    make db-diff          # 生成迁移文件"
+echo "    make db-apply         # 应用迁移到数据库"
+echo "    make db-status        # 查看迁移状态"
+echo
+echo "  开发时（自动加载 api/.env）："
 echo "    make dev-api"
 if [[ "$WITH_REACT" -eq 1 ]]; then
   echo "    make dev-react"
