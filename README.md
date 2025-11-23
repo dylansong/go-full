@@ -10,6 +10,7 @@
 - React / Vue 前端（Vite + TypeScript）
 - 通过 Capacitor 打包为移动端 App
 - 用 OpenAPI 作为 API 规范，自动生成前后端类型 & TS 客户端
+- 使用 **Turborepo** 管理 monorepo，支持并行构建和缓存
 
 ---
 
@@ -50,7 +51,9 @@ my-app/
 │     │  └─ client.ts         # 封装 ApiClient，可在 React/Vue 复用
 │     └─ package.json
 │
-├─ package.json               # npm workspaces (apps/*, packages/*)
+├─ package.json               # 根配置 (turbo + openapi-typescript)
+├─ pnpm-workspace.yaml        # pnpm workspace 配置
+├─ turbo.json                 # Turborepo 配置
 ├─ Makefile                   # 常用 dev/build/gen 命令
 └─ README.md
 ````
@@ -67,7 +70,7 @@ my-app/
 
 * `git`
 * `go`
-* `node` + `npm`
+* `node` + `pnpm`
 
 **推荐（脚手架会用到，但你也可以后面自己安装）：**
 
@@ -75,7 +78,7 @@ my-app/
 * `sqlc`（从 SQL 生成 Go 代码）
 * `oapi-codegen`（从 OpenAPI 生成 Go 接口 & 类型）
 * `docker`（如果你要本地跑 Docker / 部署到 Dokku）
-* `npx`（随 npm 自带，用于运行 `npm create vite@latest` 和 Capacitor CLI）
+* `npx`（用于运行 Capacitor CLI 等工具）
 
 ---
 
@@ -86,9 +89,28 @@ my-app/
 将本仓库设置为 **public** 后，可以直接通过 `curl` 执行脚本：
 
 ```bash
+# 语法格式
+curl -fsSL <脚本URL> | bash -s -- [参数...]
+```
+
+> **说明**：`bash -s` 从标准输入读取脚本，`--` 之后的内容作为脚本参数传递。
+
+```bash
 # 示例：生成 api + React（默认）
 curl -fsSL https://raw.githubusercontent.com/dylansong/go-full/main/init.sh \
   | bash -s -- -n my-app -m github.com/yourname/my-app
+
+# 示例：只要 Vue，不要 React
+curl -fsSL https://raw.githubusercontent.com/dylansong/go-full/main/init.sh \
+  | bash -s -- -n my-app -m github.com/yourname/my-app --no-react --with-vue
+
+# 示例：React + Vue + Mobile 全要
+curl -fsSL https://raw.githubusercontent.com/dylansong/go-full/main/init.sh \
+  | bash -s -- -n my-app -m github.com/yourname/my-app --with-vue --with-mobile
+
+# 示例：只要 API
+curl -fsSL https://raw.githubusercontent.com/dylansong/go-full/main/init.sh \
+  | bash -s -- -n my-app -m github.com/yourname/my-app --api-only
 ```
 
 ### 2. 先下载脚本再执行（更安全，可先打开看脚本内容）
@@ -179,7 +201,7 @@ cd my-app
 根目录安装 dev 依赖（openapi-typescript）：
 
 ```bash
-npm install
+pnpm install
 ```
 
 Go 侧推荐安装工具（只需安装一次，本地全局可用）：
@@ -202,6 +224,10 @@ make help
 核心命令：
 
 ```bash
+# Turbo (monorepo) - 并行启动/构建所有前端
+make dev            # 启动所有前端开发服务器 (turbo dev)
+make build          # 构建所有前端项目 (turbo build)
+
 # 从 OpenAPI 生成 Go 类型 + chi server 接口 + TS 类型
 make gen-api        # 等价于 gen-api-go + gen-api-ts
 

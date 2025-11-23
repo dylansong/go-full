@@ -113,7 +113,7 @@ need_cmd() {
 
 need_cmd git
 need_cmd go
-need_cmd npm
+need_cmd pnpm
 
 ########################################
 # 创建项目目录
@@ -126,21 +126,49 @@ echo "Initializing git repo..."
 git init >/dev/null
 
 ########################################
-# 根 package.json（workspace + openapi-typescript）
+# 根 package.json（pnpm workspace + turbo）
 ########################################
 cat > package.json <<EOF
 {
   "name": "$APP_NAME",
   "private": true,
-  "workspaces": [
-    "apps/*",
-    "packages/*"
-  ],
   "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "lint": "turbo lint",
     "gen:api:ts": "openapi-typescript api/spec/openapi.yaml -o packages/api-client/src/openapi-types.ts"
   },
   "devDependencies": {
-    "openapi-typescript": "^6.7.0"
+    "openapi-typescript": "^6.7.0",
+    "turbo": "^2"
+  },
+  "packageManager": "pnpm@9.15.0"
+}
+EOF
+
+# pnpm-workspace.yaml
+cat > pnpm-workspace.yaml <<'EOF'
+packages:
+  - "apps/*"
+  - "packages/*"
+EOF
+
+# turbo.json
+cat > turbo.json <<'EOF'
+{
+  "$schema": "https://turbo.build/schema.json",
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**"]
+    },
+    "dev": {
+      "cache": false,
+      "persistent": true
+    },
+    "lint": {
+      "dependsOn": ["^build"]
+    }
   }
 }
 EOF
@@ -443,20 +471,20 @@ cd apps
 
 if [[ "$WITH_REACT" -eq 1 ]]; then
   echo "Bootstrapping React app (apps/web-react)..."
-  npm create vite@latest web-react -- --template react-ts >/dev/null
+  pnpm create vite@latest web-react --template react-ts >/dev/null
 fi
 
 if [[ "$WITH_VUE" -eq 1 ]]; then
   echo "Bootstrapping Vue app (apps/web-vue)..."
-  npm create vite@latest web-vue -- --template vue-ts >/dev/null
+  pnpm create vite@latest web-vue --template vue-ts >/dev/null
 fi
 
 if [[ "$WITH_MOBILE" -eq 1 ]]; then
   echo "Bootstrapping Capacitor shell (apps/mobile)..."
   mkdir -p mobile
   cd mobile
-  npm init -y >/dev/null
-  npm install @capacitor/core @capacitor/cli >/dev/null
+  pnpm init >/dev/null
+  pnpm add @capacitor/core @capacitor/cli >/dev/null
 
   cat > capacitor.config.ts <<'EOF'
 import type { CapacitorConfig } from '@capacitor/cli'
@@ -491,18 +519,41 @@ API_CLIENT_PKG := packages/api-client
 .PHONY: help
 help:
 	@echo "Available commands:"
+	@echo ""
+	@echo "  Turbo (monorepo):"
+	@echo "  make dev             - 启动所有前端开发服务器 (turbo dev)"
+	@echo "  make build           - 构建所有前端项目 (turbo build)"
+	@echo ""
+	@echo "  Code Generation:"
 	@echo "  make gen-api         - 从 OpenAPI 生成 Go + TS 类型"
 	@echo "  make gen-api-go      - 从 OpenAPI 生成 Go chi server 接口和类型"
 	@echo "  make gen-api-ts      - 从 OpenAPI 生成 shared TS 类型"
 	@echo "  make sqlc            - 运行 sqlc generate"
+	@echo ""
+	@echo "  Development:"
 	@echo "  make dev-api         - 启动 Go API 服务 (air 优先)"
 	@echo "  make dev-react       - 启动 React 前端 (如果存在)"
 	@echo "  make dev-vue         - 启动 Vue 前端 (如果存在)"
+	@echo ""
+	@echo "  Build:"
 	@echo "  make build-react     - 构建 React 前端 (如果存在)"
 	@echo "  make build-vue       - 构建 Vue 前端 (如果存在)"
+	@echo ""
+	@echo "  Mobile:"
 	@echo "  make mobile-sync     - 将 React build 结果拷贝到 Capacitor (如果存在)"
+	@echo ""
+	@echo "  Docker:"
 	@echo "  make api-build       - 构建 API Docker 镜像"
 	@echo "  make api-run-local   - 本地用 Docker 运行 API"
+
+# Turbo commands
+.PHONY: dev
+dev:
+	pnpm dev
+
+.PHONY: build
+build:
+	pnpm build
 
 # OpenAPI
 .PHONY: gen-api-go
@@ -511,7 +562,7 @@ gen-api-go:
 
 .PHONY: gen-api-ts
 gen-api-ts:
-	npm run gen:api:ts
+	pnpm run gen:api:ts
 
 .PHONY: gen-api
 gen-api: gen-api-go gen-api-ts
@@ -531,7 +582,7 @@ dev-api:
 .PHONY: dev-react
 dev-react:
 	@if [ -d "$(REACT_APP_DIR)" ]; then \
-	  cd $(REACT_APP_DIR) && npm install && npm run dev -- --host; \
+	  cd $(REACT_APP_DIR) && pnpm install && pnpm run dev --host; \
 	else \
 	  echo "React app not found at $(REACT_APP_DIR)"; \
 	fi
@@ -539,7 +590,7 @@ dev-react:
 .PHONY: dev-vue
 dev-vue:
 	@if [ -d "$(VUE_APP_DIR)" ]; then \
-	  cd $(VUE_APP_DIR) && npm install && npm run dev -- --host; \
+	  cd $(VUE_APP_DIR) && pnpm install && pnpm run dev --host; \
 	else \
 	  echo "Vue app not found at $(VUE_APP_DIR)"; \
 	fi
@@ -548,7 +599,7 @@ dev-vue:
 .PHONY: build-react
 build-react:
 	@if [ -d "$(REACT_APP_DIR)" ]; then \
-	  cd $(REACT_APP_DIR) && npm install && npm run build; \
+	  cd $(REACT_APP_DIR) && pnpm install && pnpm run build; \
 	else \
 	  echo "React app not found at $(REACT_APP_DIR)"; \
 	fi
@@ -556,7 +607,7 @@ build-react:
 .PHONY: build-vue
 build-vue:
 	@if [ -d "$(VUE_APP_DIR)" ]; then \
-	  cd $(VUE_APP_DIR) && npm install && npm run build; \
+	  cd $(VUE_APP_DIR) && pnpm install && pnpm run build; \
 	else \
 	  echo "Vue app not found at $(VUE_APP_DIR)"; \
 	fi
@@ -609,7 +660,7 @@ echo "    go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest"
 echo "    go install github.com/deepmap/oapi-codegen/cmd/oapi-codegen@latest"
 echo
 echo "  Node 依赖（根目录）："
-echo "    npm install"
+echo "    pnpm install"
 echo
 echo "  生成 OpenAPI 与 TS 类型："
 echo "    make gen-api"
