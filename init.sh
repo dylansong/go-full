@@ -387,30 +387,76 @@ generate:
   - types
 EOF
 
-# Dockerfile
-cat > Dockerfile <<'EOF'
-# Build stage
-FROM golang:1.23 AS builder
+# Dockerfile（注意：使用 EOF 而非 'EOF' 以支持变量替换）
+cat > Dockerfile <<EOF
+# ============================================
+# Stage 1: Builder - 构建 Go 应用
+# ============================================
+FROM golang:1.24-alpine AS builder
 
-WORKDIR /app
+# 应用名称配置
+ARG APP_NAME=$APP_NAME-api
 
+# 安装必要的构建工具
+RUN apk add --no-cache git ca-certificates tzdata
+
+# 设置工作目录
+WORKDIR /build
+
+# 复制 go.mod 和 go.sum 并下载依赖（利用 Docker 缓存）
 COPY go.mod go.sum ./
-RUN go mod download
+RUN go mod download && go mod verify
 
+# 复制源代码
 COPY . .
 
-RUN CGO_ENABLED=0 GOOS=linux go build -o server ./cmd/server
+# 构建应用
+# CGO_ENABLED=0: 静态编译，不依赖 C 库
+# -ldflags="-s -w": 减小二进制文件大小
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \\
+    -ldflags="-s -w" \\
+    -o \\\${APP_NAME} \\
+    ./cmd/server
 
-# Runtime stage
-FROM gcr.io/distroless/base-debian12
+# ============================================
+# Stage 2: Runtime - 最终运行镜像
+# ============================================
+FROM alpine:3.19
 
+# 应用名称配置（需要在每个 stage 重新声明）
+ARG APP_NAME=$APP_NAME-api
+
+# 安装运行时依赖
+RUN apk add --no-cache ca-certificates tzdata curl
+
+# 设置时区
+ENV TZ=UTC
+
+# 创建非 root 用户
+RUN addgroup -g 1000 appuser && \\
+    adduser -D -u 1000 -G appuser appuser
+
+# 设置工作目录
 WORKDIR /app
-COPY --from=builder /app/server /app/server
 
-ENV PORT=8080
+# 从 builder 阶段复制编译好的二进制文件
+COPY --from=builder /build/\\\${APP_NAME} /app/\\\${APP_NAME}
+
+# 设置可执行权限
+RUN chmod +x /app/\\\${APP_NAME}
+
+# 切换到非 root 用户
+USER appuser
+
+# 暴露端口
 EXPOSE 8080
 
-CMD ["/app/server"]
+# 健康检查
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \\
+    CMD curl -f http://localhost:\\\${PORT:-8080}/health || exit 1
+
+# 默认命令
+CMD ["/app/$APP_NAME-api"]
 EOF
 
 # .env.example
