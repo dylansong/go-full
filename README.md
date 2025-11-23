@@ -87,18 +87,18 @@ my-app/
 
 ```bash
 # 示例：生成 api + React（默认）
-curl -fsSL https://raw.githubusercontent.com/yourname/fullstack-init/main/init_fullstack.sh \
+curl -fsSL https://raw.githubusercontent.com/dylansong/go-full/main/init.sh \
   | bash -s -- -n my-app -m github.com/yourname/my-app
 ```
 
 ### 2. 先下载脚本再执行（更安全，可先打开看脚本内容）
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/yourname/fullstack-init/main/init_fullstack.sh -o init_fullstack.sh
-chmod +x init_fullstack.sh
+curl -fsSL https://raw.githubusercontent.com/dylansong/go-full/main/init.sh -o init.sh
+chmod +x init.sh
 
 # 示例：生成 api + React + Vue + mobile
-./init_fullstack.sh \
+./init.sh \
   --name my-app \
   --module github.com/yourname/my-app \
   --with-vue \
@@ -128,19 +128,19 @@ chmod +x init_fullstack.sh
 **1）默认：API + React**
 
 ```bash
-./init_fullstack.sh -n my-app -m github.com/yourname/my-app
+./init.sh -n my-app -m github.com/yourname/my-app
 ```
 
 **2）API + React + Vue**
 
 ```bash
-./init_fullstack.sh -n my-app -m github.com/yourname/my-app --with-vue
+./init.sh -n my-app -m github.com/yourname/my-app --with-vue
 ```
 
 **3）API + React + Vue + Mobile（Capacitor）**
 
 ```bash
-./init_fullstack.sh \
+./init.sh \
   --name my-app \
   --module github.com/yourname/my-app \
   --with-vue \
@@ -150,7 +150,7 @@ chmod +x init_fullstack.sh
 **4）只要 API（不生成前端项目）**
 
 ```bash
-./init_fullstack.sh --name my-api-only --module github.com/yourname/my-api-only --api-only
+./init.sh --name my-api-only --module github.com/yourname/my-api-only --api-only
 ```
 
 ---
