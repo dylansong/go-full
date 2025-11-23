@@ -115,10 +115,15 @@ chmod +x init.sh
 -n, --name <app-name>        项目目录名（默认：fullstack-app）
 -m, --module <go-module>     Go module 路径（默认：github.com/yourname/fullstack-app）
 
+前端选项（可组合使用）：
+    --with-react             生成 React + Vite + TS 项目 (apps/web-react)（默认开启）
     --with-vue               生成 Vue + Vite + TS 项目 (apps/web-vue)
+    --no-react               不生成 React 项目
+    --no-vue                 不生成 Vue 项目
     --with-mobile            生成 Capacitor mobile 壳 (apps/mobile)
+    --no-mobile              不生成 mobile 项目
 
-    --api-only               只生成 Go API（不生成 React/Vue/mobile）
+    --api-only               只生成 Go API（等同于 --no-react --no-vue --no-mobile）
 
 -h, --help                   显示帮助
 ```
@@ -131,13 +136,19 @@ chmod +x init.sh
 ./init.sh -n my-app -m github.com/yourname/my-app
 ```
 
-**2）API + React + Vue**
+**2）只要 API + Vue（不要 React）**
+
+```bash
+./init.sh -n my-app -m github.com/yourname/my-app --no-react --with-vue
+```
+
+**3）API + React + Vue**
 
 ```bash
 ./init.sh -n my-app -m github.com/yourname/my-app --with-vue
 ```
 
-**3）API + React + Vue + Mobile（Capacitor）**
+**4）API + React + Vue + Mobile（Capacitor）**
 
 ```bash
 ./init.sh \
@@ -147,7 +158,7 @@ chmod +x init.sh
   --with-mobile
 ```
 
-**4）只要 API（不生成前端项目）**
+**5）只要 API（不生成前端项目）**
 
 ```bash
 ./init.sh --name my-api-only --module github.com/yourname/my-api-only --api-only
@@ -282,6 +293,6 @@ MIT License
 ## TODO / 未来可能扩展
 
 * [ ] 支持可选生成 Atlas 数据库迁移配置
-* [ ] 支持选择是否开启 Vue / React（当前用命令行参数）
+* [x] 支持选择是否开启 Vue / React（通过 `--with-react`/`--no-react`/`--with-vue`/`--no-vue` 参数）
 * [ ] 支持一键生成 Dokku 部署脚本 / GitHub Actions CI 模板
 

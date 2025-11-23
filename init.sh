@@ -19,14 +19,23 @@ Usage: $0 [options]
 Options:
   -n, --name <app-name>        项目目录名（默认：fullstack-app）
   -m, --module <go-module>     Go module 路径（默认：github.com/yourname/fullstack-app）
+
+  前端选项（可组合使用）：
+      --with-react             生成 React + Vite + TS 项目 (apps/web-react)（默认开启）
       --with-vue               生成 Vue + Vite + TS 项目 (apps/web-vue)
+      --no-react               不生成 React 项目
       --with-mobile            生成 Capacitor mobile 壳 (apps/mobile)
-      --api-only               只生成 Go API（不生成 React/Vue/mobile）
+
+      --api-only               只生成 Go API（等同于 --no-react --no-vue --no-mobile）
+
   -h, --help                   显示本帮助
 
 示例：
   只要 api + React（默认）：
     $0 -n my-app -m github.com/dylansong/my-app
+
+  只要 api + Vue（不要 React）：
+    $0 -n my-app -m github.com/dylansong/my-app --no-react --with-vue
 
   api + React + Vue：
     $0 -n my-app -m github.com/dylansong/my-app --with-vue
@@ -50,12 +59,28 @@ while [[ $# -gt 0 ]]; do
       GO_MODULE="$2"
       shift 2
       ;;
+    --with-react)
+      WITH_REACT=1
+      shift
+      ;;
+    --no-react)
+      WITH_REACT=0
+      shift
+      ;;
     --with-vue)
       WITH_VUE=1
       shift
       ;;
+    --no-vue)
+      WITH_VUE=0
+      shift
+      ;;
     --with-mobile)
       WITH_MOBILE=1
+      shift
+      ;;
+    --no-mobile)
+      WITH_MOBILE=0
       shift
       ;;
     --api-only)
