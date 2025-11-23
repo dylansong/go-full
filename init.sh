@@ -547,7 +547,7 @@ cd apps
 
 if [[ "$WITH_REACT" -eq 1 ]]; then
   echo "Bootstrapping React app (apps/web-react)..."
-  pnpm create vite@latest web-react --template react-ts >/dev/null
+  pnpm create vite@latest web-react --template react-swc-ts >/dev/null
 fi
 
 if [[ "$WITH_VUE" -eq 1 ]]; then
@@ -609,7 +609,8 @@ endif
 help:
 	@echo "Available commands:"
 	@echo ""
-	@echo "  Environment:"
+	@echo "  Setup:"
+	@echo "  make install         - 一键安装所有依赖（Go 工具 + Node + Atlas）"
 	@echo "  make setup-env       - 从 .env.example 创建 .env 文件"
 	@echo "  (开发命令会自动读取 api/.env 环境变量)"
 	@echo ""
@@ -644,6 +645,38 @@ help:
 	@echo "  Docker:"
 	@echo "  make api-build       - 构建 API Docker 镜像"
 	@echo "  make api-run-local   - 本地用 Docker 运行 API"
+
+# Install all dependencies
+.PHONY: install
+install:
+	@echo "📦 Installing dependencies..."
+	@echo ""
+	@echo "1. Installing Go tools..."
+	go install github.com/cosmtrek/air@latest
+	go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest
+	go install github.com/deepmap/oapi-codegen/v2/cmd/oapi-codegen@latest
+	@echo "✅ Go tools installed"
+	@echo ""
+	@echo "2. Installing Atlas..."
+	@if command -v atlas >/dev/null 2>&1; then \
+	  echo "✅ Atlas already installed"; \
+	elif command -v brew >/dev/null 2>&1; then \
+	  echo "Installing via Homebrew..."; \
+	  brew install ariga/tap/atlas; \
+	else \
+	  echo "Installing via curl..."; \
+	  curl -sSf https://atlasgo.sh | sh; \
+	fi
+	@echo ""
+	@echo "3. Installing Node dependencies..."
+	pnpm install
+	@echo ""
+	@echo "✅ All dependencies installed!"
+	@echo ""
+	@echo "Next steps:"
+	@echo "  make setup-env    # 创建 .env 文件"
+	@echo "  make gen-api      # 生成 API 代码"
+	@echo "  make sqlc         # 生成数据库代码"
 
 # Environment setup
 .PHONY: setup-env
@@ -788,27 +821,18 @@ cat > README.md <<'READMEEOF'
 ## Quick Start
 
 ```bash
-# 1. 安装依赖
-pnpm install
+# 1. 一键安装所有依赖（Go 工具 + Node + Atlas）
+make install
 
-# 2. 安装 Go 工具
-go install github.com/cosmtrek/air@latest
-go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest
-go install github.com/deepmap/oapi-codegen/cmd/oapi-codegen@latest
-
-# 3. 安装 Atlas（数据库迁移）
-brew install ariga/tap/atlas  # macOS
-# 或 curl -sSf https://atlasgo.sh | sh
-
-# 4. 配置环境变量
+# 2. 配置环境变量
 make setup-env
 vim api/.env
 
-# 5. 生成代码
+# 3. 生成代码
 make gen-api
 make sqlc
 
-# 6. 启动开发服务
+# 4. 启动开发服务
 make dev-api
 ```
 
@@ -817,7 +841,8 @@ make dev-api
 ```bash
 make help              # 查看所有命令
 
-# 环境配置
+# 安装与配置
+make install           # 一键安装所有依赖
 make setup-env         # 创建 .env 文件
 
 # 代码生成
@@ -999,45 +1024,21 @@ READMEEOF
 echo
 echo "✅ Project $APP_NAME created."
 echo
-echo "下一步（工具需要手动安装一次）："
-echo "  Go 工具："
-echo "    go install github.com/cosmtrek/air@latest"
-echo "    go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest"
-echo "    go install github.com/deepmap/oapi-codegen/cmd/oapi-codegen@latest"
+echo "下一步："
 echo
-echo "  Atlas (数据库迁移)："
-echo "    # macOS"
-echo "    brew install ariga/tap/atlas"
-echo "    # 或通用方式"
-echo "    curl -sSf https://atlasgo.sh | sh"
+echo "  cd $APP_NAME"
 echo
-echo "  Node 依赖（根目录）："
-echo "    pnpm install"
-echo
-echo "  配置环境变量："
-echo "    make setup-env        # 从 .env.example 创建 .env"
-echo "    编辑 api/.env 设置数据库连接等配置"
-echo
-echo "  生成 OpenAPI 与 TS 类型："
-echo "    make gen-api"
-echo
-echo "  生成 sqlc 代码："
-echo "    make sqlc"
-echo
-echo "  数据库迁移（Atlas）："
-echo "    make db-diff          # 生成迁移文件"
-echo "    make db-apply         # 应用迁移到数据库"
-echo "    make db-status        # 查看迁移状态"
-echo
-echo "  开发时（自动加载 api/.env）："
-echo "    make dev-api"
+echo "  make install       # 一键安装所有依赖（Go 工具 + Node + Atlas）"
+echo "  make setup-env     # 创建 .env 文件"
+echo "  vim api/.env       # 编辑数据库连接配置"
+echo "  make gen-api       # 生成 API 代码"
+echo "  make sqlc          # 生成数据库代码"
+echo "  make dev-api       # 启动 API 服务"
 if [[ "$WITH_REACT" -eq 1 ]]; then
-  echo "    make dev-react"
+  echo "  make dev-react     # 启动 React 前端"
 fi
 if [[ "$WITH_VUE" -eq 1 ]]; then
-  echo "    make dev-vue"
+  echo "  make dev-vue       # 启动 Vue 前端"
 fi
 echo
-echo "  Docker 本地测试："
-echo "    make api-build"
-echo "    make api-run-local"
+echo "查看所有命令: make help"
