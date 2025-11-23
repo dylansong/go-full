@@ -780,6 +780,220 @@ api-run-local:
 EOF
 
 ########################################
+# 5. 生成 README.md
+########################################
+cat > README.md <<'READMEEOF'
+# Project
+
+## Quick Start
+
+```bash
+# 1. 安装依赖
+pnpm install
+
+# 2. 安装 Go 工具
+go install github.com/cosmtrek/air@latest
+go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest
+go install github.com/deepmap/oapi-codegen/cmd/oapi-codegen@latest
+
+# 3. 安装 Atlas（数据库迁移）
+brew install ariga/tap/atlas  # macOS
+# 或 curl -sSf https://atlasgo.sh | sh
+
+# 4. 配置环境变量
+make setup-env
+vim api/.env
+
+# 5. 生成代码
+make gen-api
+make sqlc
+
+# 6. 启动开发服务
+make dev-api
+```
+
+## 常用命令
+
+```bash
+make help              # 查看所有命令
+
+# 环境配置
+make setup-env         # 创建 .env 文件
+
+# 代码生成
+make gen-api           # 生成 OpenAPI Go + TS 类型
+make sqlc              # 生成 sqlc Go 代码
+
+# 数据库迁移
+make db-diff           # 生成迁移文件
+make db-apply          # 应用迁移
+make db-status         # 查看迁移状态
+
+# 开发
+make dev-api           # 启动 API 服务
+make dev-react         # 启动 React 前端
+make dev-vue           # 启动 Vue 前端
+
+# 构建
+make build             # 构建所有前端
+make api-build         # 构建 API Docker 镜像
+```
+
+---
+
+## 数据库管理
+
+本项目使用 **Atlas** 进行数据库迁移管理，采用声明式（Declarative）方式。
+
+### 架构概览
+
+```
+db/schema/*.sql (你编辑这里 - 唯一的结构定义源)
+       │
+       ▼
+   atlas migrate diff ──────► db/migrations/ (自动生成)
+       │                            │
+       ▼                            ▼
+     sqlc generate              atlas migrate apply
+       │                            │
+       ▼                            ▼
+  db/generated/*.go              数据库
+  (Go 类型和查询)              (实际表结构)
+```
+
+### 目录职责
+
+| 目录 | 作用 | 谁写 |
+|------|------|------|
+| `db/schema/` | 定义表结构（DDL） | **你手动编写** |
+| `db/query/` | 定义 SQL 查询 | **你手动编写** |
+| `db/migrations/` | 版本化迁移文件 | Atlas 自动生成 |
+| `db/generated/` | Go 代码 | sqlc 自动生成 |
+
+> **重要**：`db/schema/*.sql` 是数据库结构的 **唯一定义源（Single Source of Truth）**。
+
+### 典型工作流程
+
+#### 1. 新建表
+
+```sql
+-- api/db/schema/002_posts.sql
+CREATE TABLE IF NOT EXISTS posts (
+    id          BIGSERIAL PRIMARY KEY,
+    user_id     BIGINT NOT NULL REFERENCES users(id),
+    title       TEXT NOT NULL,
+    content     TEXT NOT NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_posts_user_id ON posts(user_id);
+```
+
+#### 2. 生成迁移文件
+
+```bash
+make db-diff
+# 提示输入迁移名称，例如：add_posts_table
+```
+
+#### 3. 应用迁移
+
+```bash
+make db-apply
+```
+
+#### 4. 添加查询并生成 Go 代码
+
+```sql
+-- api/db/query/posts.sql
+
+-- name: CreatePost :one
+INSERT INTO posts (user_id, title, content)
+VALUES ($1, $2, $3)
+RETURNING *;
+
+-- name: GetPostByID :one
+SELECT * FROM posts WHERE id = $1;
+
+-- name: ListPostsByUser :many
+SELECT * FROM posts
+WHERE user_id = $1
+ORDER BY created_at DESC
+LIMIT $2 OFFSET $3;
+```
+
+```bash
+make sqlc
+```
+
+---
+
+## 项目结构
+
+```
+.
+├── api/                       # Go API
+│   ├── cmd/server/            # main.go
+│   ├── internal/
+│   │   ├── config/            # 配置加载
+│   │   ├── http/              # 业务 handler
+│   │   ├── openapi/           # oapi-codegen 生成
+│   │   ├── service/           # 业务逻辑
+│   │   └── repo/              # 数据库操作
+│   ├── db/
+│   │   ├── schema/            # SQL schema（你编辑这里）
+│   │   ├── query/             # SQL 查询（你编辑这里）
+│   │   ├── migrations/        # Atlas 迁移文件
+│   │   └── generated/         # sqlc 生成代码
+│   ├── spec/
+│   │   └── openapi.yaml       # OpenAPI 规范
+│   ├── atlas.hcl              # Atlas 配置
+│   ├── sqlc.yaml              # sqlc 配置
+│   └── .env.example           # 环境变量模板
+│
+├── apps/
+│   ├── web-react/             # React + Vite + TS
+│   ├── web-vue/               # Vue + Vite + TS
+│   └── mobile/                # Capacitor 壳
+│
+├── packages/
+│   └── api-client/            # 共享 TS API 客户端
+│
+├── Makefile                   # 常用命令
+├── package.json               # pnpm workspace + turbo
+└── turbo.json                 # Turborepo 配置
+```
+
+---
+
+## 环境变量
+
+编辑 `api/.env` 文件：
+
+```bash
+PORT=8080
+DATABASE_URL=postgres://postgres:password@localhost:5432/mydb?sslmode=disable
+```
+
+Makefile 会自动加载 `api/.env` 中的环境变量。
+
+---
+
+## 前后端类型共享
+
+* `api/spec/openapi.yaml` 是 API 规范的单一来源
+* Go 端通过 `oapi-codegen` 生成接口和类型
+* 前端通过 `openapi-typescript` 生成 TS 类型
+
+```ts
+import { ApiClient } from "@fullstack/api-client"
+
+const client = new ApiClient({ baseUrl: import.meta.env.VITE_API_BASE_URL })
+const data = await client.listUsers()
+```
+READMEEOF
+
+########################################
 # 打印下一步提示
 ########################################
 echo

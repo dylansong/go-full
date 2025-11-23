@@ -31,12 +31,15 @@ my-app/
 │  ├─ db/
 │  │  ├─ schema/              # SQL schema 示例 (users 表)
 │  │  ├─ query/               # sqlc query 示例
-│  │  └─ generated/           # sqlc 生成代码
+│  │  ├─ generated/           # sqlc 生成代码
+│  │  └─ migrations/          # Atlas 生成的迁移文件
 │  ├─ spec/
 │  │  ├─ openapi.yaml         # OpenAPI 规范 (含 /health, /users 示例)
 │  │  └─ oapi-codegen.yaml    # oapi-codegen 配置
 │  ├─ .air.toml               # air 热重载配置
 │  ├─ sqlc.yaml               # sqlc 配置
+│  ├─ atlas.hcl               # Atlas 数据库迁移配置
+│  ├─ .env.example            # 环境变量模板
 │  └─ Dockerfile              # 多阶段构建镜像，可直接给 Dokku / K8s 用
 │
 ├─ apps/
@@ -77,6 +80,7 @@ my-app/
 * `air`（Go 热重载）
 * `sqlc`（从 SQL 生成 Go 代码）
 * `oapi-codegen`（从 OpenAPI 生成 Go 接口 & 类型）
+* `atlas`（数据库迁移工具）
 * `docker`（如果你要本地跑 Docker / 部署到 Dokku）
 * `npx`（用于运行 Capacitor CLI 等工具）
 
@@ -212,6 +216,33 @@ go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest
 go install github.com/deepmap/oapi-codegen/cmd/oapi-codegen@latest
 ```
 
+Atlas 数据库迁移工具：
+
+```bash
+# macOS
+brew install ariga/tap/atlas
+
+# 或通用方式
+curl -sSf https://atlasgo.sh | sh
+```
+
+### 1.5 配置环境变量
+
+```bash
+# 从模板创建 .env 文件
+make setup-env
+
+# 编辑 api/.env 设置数据库连接
+vim api/.env
+```
+
+`.env` 文件示例：
+
+```bash
+PORT=8080
+DATABASE_URL=postgres://postgres:password@localhost:5432/mydb?sslmode=disable
+```
+
 ### 2. 使用 Makefile
 
 本脚手架已经生成了一份通用 `Makefile`，包含常用命令：
@@ -240,6 +271,11 @@ make gen-api-ts
 # 从 db/schema + db/query 生成 sqlc 代码
 make sqlc
 
+# 数据库迁移 (Atlas)
+make db-diff          # 生成迁移文件
+make db-apply         # 应用迁移到数据库
+make db-status        # 查看迁移状态
+
 # 启动 API（优先用 air，没有 air 则 go run）
 make dev-api
 
@@ -264,6 +300,131 @@ make api-build
 # 使用 Docker 在本地跑 API（端口 8080）
 make api-run-local
 ```
+
+---
+
+## Database Management / 数据库管理
+
+本项目使用 **Atlas** 进行数据库迁移管理，采用声明式（Declarative）方式。
+
+### 架构概览
+
+```
+db/schema/*.sql (你编辑这里 - 唯一的结构定义源)
+       │
+       ▼
+   atlas migrate diff ──────► db/migrations/ (自动生成)
+       │                            │
+       ▼                            ▼
+     sqlc generate              atlas migrate apply
+       │                            │
+       ▼                            ▼
+  db/generated/*.go              数据库
+  (Go 类型和查询)              (实际表结构)
+```
+
+### 目录职责
+
+| 目录 | 作用 | 谁写 |
+|------|------|------|
+| `db/schema/` | 定义表结构（DDL） | **你手动编写** |
+| `db/query/` | 定义 SQL 查询 | **你手动编写** |
+| `db/migrations/` | 版本化迁移文件 | Atlas 自动生成 |
+| `db/generated/` | Go 代码 | sqlc 自动生成 |
+
+> **重要**：`db/schema/*.sql` 是数据库结构的 **唯一定义源（Single Source of Truth）**。你只需声明"最终要什么结构"，Atlas 自动计算"如何从当前状态到达目标状态"。
+
+### 典型工作流程
+
+#### 1. 新建表
+
+```bash
+# 创建新的 schema 文件
+cat > api/db/schema/002_posts.sql << 'EOF'
+CREATE TABLE IF NOT EXISTS posts (
+    id          BIGSERIAL PRIMARY KEY,
+    user_id     BIGINT NOT NULL REFERENCES users(id),
+    title       TEXT NOT NULL,
+    content     TEXT NOT NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_posts_user_id ON posts(user_id);
+EOF
+```
+
+#### 2. 生成迁移文件
+
+```bash
+make db-diff
+# 提示输入迁移名称，例如：add_posts_table
+```
+
+Atlas 会自动：
+- 对比 `db/schema/` 与当前数据库结构
+- 生成迁移文件到 `db/migrations/`
+
+#### 3. 应用迁移
+
+```bash
+make db-apply
+```
+
+#### 4. 重新生成 Go 代码
+
+```bash
+make sqlc
+```
+
+### 常用命令
+
+```bash
+# 生成迁移文件（比较 schema 与数据库差异）
+make db-diff
+
+# 应用待执行的迁移
+make db-apply
+
+# 查看迁移状态
+make db-status
+
+# 更新迁移文件哈希（修改迁移文件后执行）
+make db-hash
+
+# 验证迁移文件
+make db-validate
+```
+
+### 添加新的查询
+
+在 `db/query/` 目录下添加 SQL 查询：
+
+```sql
+-- db/query/posts.sql
+
+-- name: CreatePost :one
+INSERT INTO posts (user_id, title, content)
+VALUES ($1, $2, $3)
+RETURNING *;
+
+-- name: GetPostByID :one
+SELECT * FROM posts
+WHERE id = $1;
+
+-- name: ListPostsByUser :many
+SELECT * FROM posts
+WHERE user_id = $1
+ORDER BY created_at DESC
+LIMIT $2 OFFSET $3;
+```
+
+然后运行：
+
+```bash
+make sqlc
+```
+
+sqlc 会在 `db/generated/` 目录生成类型安全的 Go 代码。
 
 ---
 
@@ -318,7 +479,8 @@ MIT License
 
 ## TODO / 未来可能扩展
 
-* [ ] 支持可选生成 Atlas 数据库迁移配置
+* [x] 支持可选生成 Atlas 数据库迁移配置
 * [x] 支持选择是否开启 Vue / React（通过 `--with-react`/`--no-react`/`--with-vue`/`--no-vue` 参数）
+* [x] 支持环境变量配置（.env.example + Makefile 自动加载）
 * [ ] 支持一键生成 Dokku 部署脚本 / GitHub Actions CI 模板
 
