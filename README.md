@@ -211,7 +211,7 @@ pnpm install
 Go 侧推荐安装工具（只需安装一次，本地全局可用）：
 
 ```bash
-go install github.com/cosmtrek/air@latest
+go install github.com/air-verse/air@latest
 go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest
 go install github.com/deepmap/oapi-codegen/cmd/oapi-codegen@latest
 ```

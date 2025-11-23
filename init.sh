@@ -698,7 +698,7 @@ install:
 	@echo "📦 Installing dependencies..."
 	@echo ""
 	@echo "1. Installing Go tools..."
-	go install github.com/cosmtrek/air@latest
+	go install github.com/air-verse/air@latest
 	go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest
 	go install github.com/deepmap/oapi-codegen/v2/cmd/oapi-codegen@latest
 	@echo "✅ Go tools installed"
